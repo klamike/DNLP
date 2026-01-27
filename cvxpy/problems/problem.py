@@ -48,6 +48,7 @@ from cvxpy.reductions.solvers.conic_solvers.conic_solver import ConicSolver
 from cvxpy.reductions.solvers.defines import SOLVER_MAP_CONIC, SOLVER_MAP_QP
 from cvxpy.reductions.solvers.nlp_solvers.copt_nlpif import COPT as COPT_nlp
 from cvxpy.reductions.solvers.nlp_solvers.ipopt_nlpif import IPOPT as IPOPT_nlp
+from cvxpy.reductions.solvers.nlp_solvers.madnlp_nlpif import MADNLP as MADNLP_nlp
 from cvxpy.reductions.solvers.nlp_solvers.knitro_nlpif import KNITRO as KNITRO_nlp
 from cvxpy.reductions.solvers.nlp_solvers.uno_nlpif import UNO as UNO_nlp
 from cvxpy.reductions.solvers.qp_solvers.qp_solver import QpSolver
@@ -1236,6 +1237,8 @@ class Problem(u.Canonical):
             # (default to Ipopt)
             if solver is s.IPOPT or solver is None:
                 nlp_reductions = reductions + [IPOPT_nlp()]
+            elif solver is s.MADNLP:
+                nlp_reductions = reductions + [MADNLP_nlp()]
             elif "knitro" in solver.lower():
                 if solver == "knitro_ipm":
                     kwargs["algorithm"] = 1

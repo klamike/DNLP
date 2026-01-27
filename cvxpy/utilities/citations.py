@@ -596,6 +596,19 @@ CITATION_DICT["IPOPT"] = \
   }
 """
 
+CITATION_DICT["MADNLP"] = \
+"""
+@article{shin2024accelerating,
+  title     = {Accelerating optimal power flow with {GPU}s: {SIMD} abstraction of nonlinear programs and condensed-space interior-point methods},
+  author    = {Shin, Sungho and Anitescu, Mihai and Pacaud, Fran{\c{c}}ois},
+  journal   = {Electric Power Systems Research},
+  volume    = {236},
+  pages     = {110651},
+  year      = {2024},
+  publisher = {Elsevier}
+}
+"""
+
 CITATION_DICT["UNO"] = \
 """
 @unpublished{VanaretLeyffer2024,
