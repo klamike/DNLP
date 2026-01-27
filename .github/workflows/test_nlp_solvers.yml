@@ -37,6 +37,12 @@ jobs:
       - name: Install cyipopt via conda
         run: |
           conda install -y -c conda-forge cyipopt
+      - name: Install uno via pip
+        run: |
+          pip install unopy
+      - name: Install libmad via pip
+        run: |
+          pip install "git+https://github.com/klamike/libMad.git@mk/latest#egg=libmad&subdirectory=python"
       - name: Install test dependencies
         run: |
           pip install -e .
