@@ -63,3 +63,5 @@ cvxpy/version.py
 # Hypothesis testing
 .hypothesis/
 .aider*
+
+uv.lock

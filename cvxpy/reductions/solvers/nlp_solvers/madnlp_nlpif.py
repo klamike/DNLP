@@ -6,11 +6,8 @@ from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import NLPsolver
 from cvxpy.utilities.citations import CITATION_DICT
 
 
-from cvxpy.reductions.solvers.nlp_solvers.libmad import libMad
-
-
 class MadNLPProblem:
-    def __init__(self, data, libMad: libMad):
+    def __init__(self, data, libMad):
         self.libMad = libMad
 
         oracles = data["oracles"]
@@ -18,12 +15,12 @@ class MadNLPProblem:
         x0, lvar, uvar, lcon, ucon = data["x0"], data["lb"], data["ub"], data["cl"], data["cu"]
         y0 = np.zeros(self.m)  # TODO: check default init of madnlp
 
-        self.callbacks = self._create_callbacks(self.n, self.m, oracles)
+        self.callbacks = self._create_callbacks(self.libMad, self.n, self.m, oracles)
         self.nlp_ptr = self.libMad.create_nlpmodel(self.callbacks)
         self.libMad.set_numerics(self.nlp_ptr, self.n, self.m, x0, y0, lvar, uvar, lcon, ucon)
 
     @staticmethod
-    def _create_callbacks(n, m, oracles):
+    def _create_callbacks(libMad, n, m, oracles):
         jac_row, jac_col = oracles.jacobianstructure()
         nnzj = len(jac_row)
         jac_row = np.array(jac_row, dtype=np.int64) + 1  # julia is 1-based
@@ -123,7 +120,9 @@ class MADNLP(NLPsolver):
     def cite(self): return CITATION_DICT["MADNLP"]
 
     def import_solver(self):
-        if self.libMad is None: self.libMad = libMad()
+        if self.libMad is None:
+            import libmad
+            self.libMad = libmad.libMad()
 
     def invert(self, solution, inverse_data):
         attr = {}
@@ -154,13 +153,13 @@ class MADNLP(NLPsolver):
         stats_ptr = self.libMad.solve("madnlp", solver_ptr, opts_ptr)
 
         solution = {}
-        solution['status'] = self.libMad.get_status(stats_ptr)
-        solution['iterations'] = self.libMad.get_iters(stats_ptr)
+        solution['status'] = self.libMad.get_status("madnlp", stats_ptr)
+        solution['iterations'] = self.libMad.get_iters("madnlp", stats_ptr)
 
-        if self.libMad.get_success(stats_ptr):
-            solution['obj_val'] = self.libMad.get_obj(stats_ptr)
-            solution['x'] = np.array(self.libMad.get_solution(stats_ptr, problem.n))
+        if self.libMad.get_success("madnlp", stats_ptr):
+            solution['obj_val'] = self.libMad.get_obj("madnlp", stats_ptr)
+            solution['x'] = np.array(self.libMad.get_solution("madnlp", stats_ptr, problem.n))
 
-        self.libMad.delete(stats_ptr, solver_ptr, opts_ptr)
+        self.libMad.delete("madnlp", stats_ptr, solver_ptr, opts_ptr)
 
         return solution

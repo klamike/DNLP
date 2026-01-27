@@ -100,6 +100,7 @@ doc = ["sphinx",
        "sphinx-inline-tabs",
        "sphinx-design",
        "sphinx-immaterial>=0.11.7"]
+MADNLP = ["libmad"]
 
 [project.readme]
 file = "README.md"
@@ -107,3 +108,6 @@ content-type = "text/markdown"
 
 [tool.setuptools]
 include-package-data = false
+
+[tool.uv.sources]
+libmad = { git = "https://github.com/klamike/libMad.git", subdirectory = "python", rev = "mk/latest" }
