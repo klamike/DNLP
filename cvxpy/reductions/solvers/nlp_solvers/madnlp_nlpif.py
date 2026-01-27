@@ -67,7 +67,10 @@ class MadNLPProblem:
         def eval_jac_g(x_ptr, jac_ptr, user_data):
             x = np.array([x_ptr[i] for i in range(n)])
             jac = oracles.jacobian(x)
-            jac_array = np.frombuffer(jac, dtype=np.float64)
+            if isinstance(jac, memoryview):
+                jac_array = np.frombuffer(jac, dtype=np.float64)
+            else:
+                jac_array = np.array(jac).flatten()
             for i in range(nnzj): jac_ptr[i] = jac_array[i]
             return 0
 
@@ -76,7 +79,10 @@ class MadNLPProblem:
             x = np.array([x_ptr[i] for i in range(n)])
             lam = np.array([lambda_ptr[i] for i in range(m)])
             hess = oracles.hessian(x, lam, obj_factor)
-            hess_array = np.frombuffer(hess, dtype=np.float64)
+            if isinstance(hess, memoryview):
+                hess_array = np.frombuffer(hess, dtype=np.float64)
+            else:
+                hess_array = np.array(hess).flatten()
             for i in range(nnzh): hess_ptr[i] = hess_array[i]
             return 0
 
