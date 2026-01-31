@@ -7,10 +7,8 @@ from cvxpy.utilities.citations import CITATION_DICT
 
 
 class MadNLPProblem:
-    def __init__(self, data, libMad):
+    def __init__(self, data, libMad, oracles):
         self.libMad = libMad
-
-        oracles = data["oracles"]
         self.m, self.n = len(data["cl"]), len(data["x0"])
         x0, lvar, uvar, lcon, ucon = data["x0"], data["lb"], data["ub"], data["cl"], data["cu"]
         y0 = np.zeros(self.m)  # TODO: check default init of madnlp
@@ -153,7 +151,12 @@ class MADNLP(NLPsolver):
     def solve_via_data(self, data, warm_start: bool, verbose: bool, solver_opts, solver_cache=None):
         self.import_solver()
 
-        problem = MadNLPProblem(data, self.libMad)
+        from cvxpy.reductions.solvers.nlp_solvers.nlp_solver import Oracles
+
+        bounds = data["_bounds"]
+        oracles = Oracles(bounds.new_problem, bounds.x0, len(bounds.cl), verbose=verbose)
+
+        problem = MadNLPProblem(data, self.libMad, oracles)
         opts_ptr = self.libMad.create_and_set_options(solver_opts)
         solver_ptr = self.libMad.create_solver("madnlp", problem.nlp_ptr, opts_ptr)
         stats_ptr = self.libMad.solve("madnlp", solver_ptr, opts_ptr)
