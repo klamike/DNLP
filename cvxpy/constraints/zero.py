@@ -91,6 +91,13 @@ class Zero(Constraint):
         """
         self.dual_variables[0].save_value(value)
 
+    def _dual_cone(self, *args):
+        """Dual cone of Zero is the full space (no constraints)."""
+        if args != ():
+            assert len(args) == 1
+            assert args[0].shape == self.args[0].shape
+        return []
+
 
 class Equality(Constraint):
     """A constraint of the form :math:`x = y`.
@@ -169,3 +176,10 @@ class Equality(Constraint):
             value: The value of the dual variable.
         """
         self.dual_variables[0].save_value(value)
+
+    def _dual_cone(self, *args):
+        """Dual cone of Equality is the full space (no constraints)."""
+        if args != ():
+            assert len(args) == 1
+            assert args[0].shape == self.expr.shape
+        return []

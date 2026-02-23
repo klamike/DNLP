@@ -20,7 +20,9 @@ from fractions import Fraction
 import numpy as np
 
 from cvxpy import settings
+from cvxpy.atoms.affine.binary_operators import multiply
 from cvxpy.atoms.affine.sum import sum
+from cvxpy.atoms.affine.reshape import reshape
 from cvxpy.atoms.affine.vec import vec
 from cvxpy.atoms.elementwise.abs import abs
 from cvxpy.constraints.power import PowCone3D
@@ -46,6 +48,24 @@ def _pnorm_p2_canon(expr, args, bounds=None):
         return t, [SOC(vec(t, order="F"), x, axis)]
 
 
+def _pnorm_axis_sum(r, expr):
+    if expr.axis is None or len(r.shape) <= 1:
+        return sum(r)
+    return sum(r, axis=expr.axis, keepdims=expr.keepdims)
+
+
+def _pnorm_promoted_t(expr, x, t):
+    if expr.axis is None or len(x.shape) <= 1:
+        return multiply(Constant(np.ones(x.shape)), t)
+    if expr.axis == 0:
+        t_for_broadcast = t if expr.keepdims else reshape(t, (1, x.shape[1]), order="F")
+        return multiply(Constant(np.ones(x.shape)), t_for_broadcast)
+    if expr.axis == 1:
+        t_for_broadcast = t if expr.keepdims else reshape(t, (x.shape[0], 1), order="F")
+        return multiply(Constant(np.ones(x.shape)), t_for_broadcast)
+    raise ValueError("pnorm axis must be None, 0, or 1.")
+
+
 def pnorm_exact_canon(expr, args, solver_context: SolverInfo | None = None):
     """Canonicalize Pnorm using power cone constraints."""
     p = expr.p
@@ -67,9 +87,8 @@ def pnorm_exact_canon(expr, args, solver_context: SolverInfo | None = None):
         constraints += abs_constraints
 
     r = Variable(x.shape)
-    constraints += [sum(r) == t]
-
-    promoted_t = Constant(np.ones(x.shape)) * t
+    constraints += [_pnorm_axis_sum(r, expr) == t]
+    promoted_t = _pnorm_promoted_t(expr, x, t)
 
     if p < 0:
         alpha = float(-p / (1 - p))
@@ -112,9 +131,8 @@ def pnorm_approx_canon(expr, args, solver_context: SolverInfo | None = None):
         constraints += abs_constraints
 
     r = Variable(x.shape)
-    constraints += [sum(r) == t]
-
-    promoted_t = Constant(np.ones(x.shape)) * t
+    constraints += [_pnorm_axis_sum(r, expr) == t]
+    promoted_t = _pnorm_promoted_t(expr, x, t)
 
     if p < 0:
         constraints += gm_constrs(promoted_t, [x, r], (-p / (1 - p), 1 / (1 - p)))

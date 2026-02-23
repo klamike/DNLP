@@ -20,7 +20,10 @@ import scipy.sparse as sp
 from scipy import linalg as LA
 
 from cvxpy.atoms.atom import Atom
+from cvxpy.atoms.affine.trace import trace
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class lambda_max(Atom):
@@ -105,3 +108,18 @@ class lambda_max(Atom):
         if any([p.value is None for p in self.parameters()]):
             return None
         return self._value_impl()
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of lambda_max is PSD+trace indicator."""
+        if y.ndim != 2 or y.shape[0] != y.shape[1]:
+            raise ValueError("Fenchel conjugate of lambda_max expects a square dual matrix.")
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if not scale.is_scalar():
+            raise ValueError("Perspective scale for lambda_max conjugate must be scalar.")
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for lambda_max conjugates."
+            )
+        return self.indicator_conjugate([y == y.H, y >> 0, trace(y) == scale])

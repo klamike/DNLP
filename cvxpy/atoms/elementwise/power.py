@@ -19,8 +19,13 @@ import scipy.sparse as sp
 
 import cvxpy.utilities as u
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.atoms.affine.reshape import reshape
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.constraints.power import PowCone3D
 from cvxpy.expressions import cvxtypes
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
+from cvxpy.expressions.variable import Variable
 from cvxpy.utilities import bounds as bounds_utils
 from cvxpy.utilities.power_tools import is_power2, pow_high, pow_mid, pow_neg
 
@@ -342,6 +347,54 @@ class Power(Elementwise):
             return self.args[0].is_pwl()
         else:
             return self.args[0].is_constant()
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of (s * x^p), for constant p > 1."""
+        if not _is_const(self.p) or self.p_used is None or self.p_used <= 1:
+            raise NotImplementedError(
+                "Fenchel conjugate is currently implemented for power(x, p) with p > 1 only."
+            )
+
+        p = self.p_used
+        p_float = float(p)
+        q = p_float / (p_float - 1.0)
+        alpha = 1.0 / q
+        coeff = (p_float - 1.0) / (p_float ** q)  # conjugate coefficient for x^p.
+        one_sided_domain = not is_power2(p)
+
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for power conjugates."
+            )
+        if not scale.is_scalar() and scale.shape != y.shape:
+            raise ValueError(
+                "Perspective scale for power conjugate must be scalar or match the dual shape."
+            )
+
+        constraints = []
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+
+        z = Variable(y.shape, nonneg=True, name="z_power_conj")
+        z_vec = reshape(z, (z.size,), order="F")
+        y_vec = reshape(y, (y.size,), order="F")
+        if scale.is_scalar():
+            scale_vec = reshape(scale * Constant(np.ones(y.shape)), (y.size,), order="F")
+        else:
+            scale_vec = reshape(scale, (scale.size,), order="F")
+
+        if one_sided_domain:
+            u = Variable(y.shape, nonneg=True, name="u_power_conj")
+            constraints.append(u >= y)
+            cone_z = reshape(u, (u.size,), order="F")
+        else:
+            cone_z = y_vec
+
+        constraints.append(PowCone3D(z_vec / coeff, scale_vec, cone_z, alpha=alpha))
+        return z, constraints
 
     def _quadratic_power(self) -> bool:
         """Utility function to check if power is 0, 1 or 2."""

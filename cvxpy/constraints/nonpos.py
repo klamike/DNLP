@@ -94,6 +94,17 @@ class NonPos(Constraint):
         viol = np.linalg.norm(res, ord=2)
         return viol
 
+    def _dual_cone(self, *args):
+        """Dual cone of NonPos is NonPos."""
+        if args == ():
+            arg = self.dual_variables[0]
+        else:
+            assert len(args) == 1
+            assert args[0].shape == self.args[0].shape
+            arg = args[0]
+        # NonPos(arg) is equivalent to NonNeg(-arg) and avoids deprecation.
+        return NonNeg(-arg)
+
 
 class NonNeg(Constraint):
     """A constraint of the form :math:`x \\geq 0`.
@@ -152,6 +163,16 @@ class NonNeg(Constraint):
                              "whose expression is None-valued.")
         viol = np.linalg.norm(res, ord=2)
         return viol
+
+    def _dual_cone(self, *args):
+        """Dual cone of NonNeg is NonNeg."""
+        if args == ():
+            arg = self.dual_variables[0]
+        else:
+            assert len(args) == 1
+            assert args[0].shape == self.args[0].shape
+            arg = args[0]
+        return NonNeg(arg)
 
 
 class Inequality(Constraint):

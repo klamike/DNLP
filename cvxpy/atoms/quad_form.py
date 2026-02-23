@@ -20,9 +20,15 @@ import numpy as np
 import scipy.sparse as sp
 from scipy import linalg as LA
 
+from cvxpy.atoms.affine.reshape import reshape
+from cvxpy.atoms.affine.hstack import hstack
+from cvxpy.atoms.affine.vstack import vstack
 from cvxpy.atoms.affine.wraps import psd_wrap
 from cvxpy.atoms.atom import Atom
+from cvxpy.atoms.quad_over_lin import quad_over_lin
+from cvxpy.expressions.constants import Constant
 from cvxpy.expressions.expression import Expression
+from cvxpy.expressions.variable import Variable
 from cvxpy.interface.matrix_utilities import is_sparse
 from cvxpy.utilities.linalg import sparse_cholesky
 from cvxpy.utilities.warn import warn
@@ -126,6 +132,119 @@ class QuadForm(Atom):
         P = np.array(values[1])
         D = (P + np.conj(P.T)) @ x
         return [sp.csc_array([D.ravel(order="F")]).T]
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of (1/2) x'Px is (1/2) y' P^{-1} y.
+
+        For the atom x'Px (without the 1/2 factor), the conjugate is
+        (1/4) y' P^{-1} y.
+
+        More precisely: f(x) = x'Px, so f*(y) = sup_x { y'x - x'Px }
+        = (1/4) y' P^{-1} y (when P is PSD).
+
+        Requires P to be a constant PSD matrix.
+        """
+        P = self.args[1]
+        if not P.is_constant():
+            raise NotImplementedError(
+                "Fenchel conjugate of quad_form requires constant P."
+            )
+        if not P.is_psd():
+            raise NotImplementedError(
+                "Fenchel conjugate of quad_form requires PSD P."
+            )
+
+        P_val = P.value.toarray() if is_sparse(P.value) else np.asarray(P.value)
+        P_num = np.asarray(
+            P_val,
+            dtype=np.complex128 if np.iscomplexobj(P_val) else float,
+        )
+        # Guard against minor numerical asymmetry in user-provided constants.
+        P_num = 0.5 * (P_num + np.conjugate(P_num.T))
+
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(scale)
+        if not scale.is_scalar(): raise ValueError("Perspective-conjugate of quad_form requires a scalar multiplier.")
+        if scale.is_complex() and not scale.is_real():
+            raise ValueError(
+                "Perspective-conjugate of quad_form requires a real multiplier."
+            )
+        scale_value = np.asarray(scale.value) if scale.value is not None else None
+        scale_is_one = (
+            scale.is_constant()
+            and scale_value is not None
+            and scale_value.ndim == 0
+            and float(scale_value.item()) == 1.0
+        )
+
+        if P.parameters():
+            return self._parameterized_psd_conjugate(y, scale)
+
+        if scale_is_one:
+            # Keep closed form in the unscaled case so atom-level value
+            # evaluation remains available.
+            # Compute P^{-1} using pseudoinverse for robustness.
+            P_inv = np.linalg.pinv(P_num)
+            P_inv = 0.5 * (P_inv + np.conjugate(P_inv.T))
+            conj_expr = 0.25 * QuadForm(y, Constant(P_inv))
+            constraints = []
+            n = P_num.shape[0]
+            if np.linalg.matrix_rank(P_num) < n:
+                # Domain for singular PSD P: y must lie in range(P).
+                range_residual = np.eye(n, dtype=P_num.dtype) - P_num @ P_inv
+                constraints.append(Constant(range_residual) @ y == 0)
+            return conj_expr, constraints
+
+        evals, evecs = np.linalg.eigh(P_num)
+        tol = np.finfo(float).eps * max(1.0, np.max(np.abs(evals))) * P_num.shape[0]
+        pos = evals > tol
+        if not np.any(pos):
+            return self.indicator_conjugate([y == 0])
+        B = evecs[:, pos] @ np.diag(np.sqrt(evals[pos]))
+
+        w = Variable(B.shape[1], complex=np.iscomplexobj(B), name="w_quad_form_persp")
+        y_from_w = reshape(Constant(B) @ w, y.shape, order="F")
+        return quad_over_lin(w, 4.0 * scale), [y == y_from_w]
+
+    def _parameterized_psd_conjugate(self, y, scale):
+        """Conjugate epigraph for PSD parameter matrices via Schur complement."""
+        P = self.args[1]
+        n = y.size
+        y_col = reshape(y, (n, 1), order="F")
+        t = Variable(name="t_quad_form_param_conj")
+        top = hstack([reshape(4.0 * t, (1, 1), order="F"), y_col.H])
+        bottom = hstack([y_col, scale * P])
+        constraints = [vstack([top, bottom]) >> 0]
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+        return t, constraints
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        """Conjugate of -quad_form(x, P), requiring constant NSD P.
+
+        For NSD P, -x'Px = x'(-P)x with PSD -P, so this delegates to the
+        convex quad_form conjugate on -P.
+        """
+        P = self.args[1]
+        if P.parameters():
+            raise NotImplementedError(
+                "Fenchel conjugate of -quad_form with Parameter matrix "
+                "is not implemented."
+            )
+        if not P.is_constant():
+            raise NotImplementedError(
+                "Fenchel conjugate of -quad_form requires constant P."
+            )
+        if not P.is_nsd():
+            raise NotImplementedError(
+                "Fenchel conjugate of -quad_form requires NSD P."
+            )
+
+        return QuadForm(self.args[0], Constant(-P.value)).conjugate(
+            y,
+            perspective_scale=perspective_scale,
+        )
 
     def shape_from_args(self) -> Tuple[int, ...]:
         return tuple()

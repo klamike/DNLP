@@ -526,6 +526,68 @@ class Atom(Expression):
             return intf.DEFAULT_INTF.const_to_matrix(result)
         return new_numeric
 
+    def conjugate(self, y, perspective_scale=1):
+        """Returns tuple (`expr`, `constraints`) where `expr` is f*(y).
+
+        When `perspective_scale` is provided, implementations may return
+        ((perspective_scale * f)^*)(y). Atoms that do not support scaled
+        perspective-conjugates should raise NotImplementedError.
+        """
+        raise NotImplementedError()
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        """Returns conjugate of -f for concave atoms.
+
+        Implementations may return ((perspective_scale * (-f))^*)(y).
+        """
+        raise NotImplementedError(
+            f"Fenchel conjugate of -{type(self).__name__} is not implemented."
+        )
+
+    def conjugate_term(self, nonconstant_arg_indices, dual_vars, perspective_scale=1):
+        """Conjugate for objective terms formed from this atom.
+
+        The default implementation supports unary terms where only the first
+        atom argument is non-constant, i.e., term shape
+            f(affine_arg0, constant_arg1, ...).
+        """
+        if nonconstant_arg_indices != (0,) or len(dual_vars) != 1:
+            raise NotImplementedError(
+                f"Fenchel term conjugate not implemented for {type(self).__name__} "
+                f"with non-constant arguments {nonconstant_arg_indices}."
+            )
+        return self.conjugate(dual_vars[0], perspective_scale=perspective_scale)
+
+    def negative_conjugate_term(
+        self,
+        nonconstant_arg_indices,
+        dual_vars,
+        perspective_scale=1,
+    ):
+        """Conjugate of -f for objective terms formed from this atom."""
+        if nonconstant_arg_indices != (0,) or len(dual_vars) != 1:
+            raise NotImplementedError(
+                f"Fenchel term conjugate of -{type(self).__name__} is not "
+                f"implemented for non-constant arguments "
+                f"{nonconstant_arg_indices}."
+            )
+        return self.negative_conjugate(
+            dual_vars[0],
+            perspective_scale=perspective_scale,
+        )
+
+    @staticmethod
+    def indicator_conjugate(constraints):
+        """Return an indicator-form conjugate represented by explicit constraints."""
+        return 0, constraints
+
+    @staticmethod
+    def raise_convex_only_conjugate_not_implemented(atom_name):
+        raise NotImplementedError(
+            "Fenchel conjugate is currently defined only for convex atoms; "
+            f"{atom_name} is concave."
+        )
+
     def atoms(self) -> List['Atom']:
         """A list of the atom types present amongst this atom's arguments.
         """

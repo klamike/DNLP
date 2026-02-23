@@ -18,7 +18,10 @@ import numpy as np
 from scipy import linalg as LA
 
 from cvxpy.atoms.lambda_max import lambda_max
+from cvxpy.atoms.affine.trace import trace
 from cvxpy.atoms.sum_largest import sum_largest
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class lambda_sum_largest(lambda_max):
@@ -72,3 +75,25 @@ class lambda_sum_largest(lambda_max):
         if any([p.value is None for p in self.parameters()]):
             return None
         return self._value_impl()
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of sum of top-k eigenvalues."""
+        if y.ndim != 2 or y.shape[0] != y.shape[1]:
+            raise ValueError(
+                "Fenchel conjugate of lambda_sum_largest expects a square matrix dual variable."
+            )
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if not scale.is_scalar():
+            raise ValueError("Perspective scale for lambda_sum_largest conjugate must be scalar.")
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for lambda_sum_largest conjugates."
+            )
+        n = y.shape[0]
+        eye = Constant(np.eye(n))
+        constraints = [y == y.H, y >> 0, scale * eye - y >> 0, trace(y) == self.k * scale]
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+        return self.indicator_conjugate(constraints)

@@ -134,6 +134,20 @@ class sum_largest(Atom):
         """
         return all(arg.is_pwl() for arg in self.args)
 
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of sum_largest(x, k).
+
+        f*(y) = 0 if 0 <= y <= 1 and sum(y) = k, else +inf.
+        This is the indicator of the "capped simplex" { y : 0 <= y <= 1, 1'y = k }.
+        """
+        from cvxpy.atoms.affine.sum import sum as cp_sum
+        constraints = [
+            y >= 0,
+            y <= perspective_scale,
+            cp_sum(y) == self.k * perspective_scale,
+        ]
+        return self.indicator_conjugate(constraints)
+
     def get_data(self):
         """Returns the parameter k.
         """

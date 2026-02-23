@@ -18,7 +18,10 @@ from typing import List, Tuple
 import numpy as np
 
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.atoms.elementwise.rel_entr import rel_entr
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 from cvxpy.utilities import bounds as bounds_utils
 
 
@@ -96,6 +99,17 @@ class log(Elementwise):
         else:
             grad_vals = 1.0/values[0]
             return [log.elemwise_grad_to_diag(grad_vals, rows, cols)]
+
+    def conjugate(self, y, perspective_scale=1):
+        self.raise_convex_only_conjugate_not_implemented("log")
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        # ((s * (-log))^*)(y) = s * (-1 - log(-y / s))
+        #                     = rel_entr(s, -y) - s, with closure at s=0.
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        return rel_entr(scale, -y) - scale, [y <= 0, scale >= 0]
 
     def _domain(self) -> List[Constraint]:
         """Returns constraints describing the domain of the node.

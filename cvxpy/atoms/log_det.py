@@ -23,6 +23,8 @@ from numpy import linalg as LA
 import cvxpy.settings as s
 from cvxpy.atoms.atom import Atom
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class log_det(Atom):
@@ -119,3 +121,31 @@ class log_det(Atom):
         if any([p.value is None for p in self.parameters()]):
             return None
         return self._value_impl()
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        """Conjugate of -log_det.
+
+        For scalar s >= 0 and n x n matrix y:
+            (s * (-log_det))^*(y) = -s*n - s*log_det(-y / s),
+        with domain y = y.H and y << 0.
+        """
+        if y.ndim != 2 or y.shape[0] != y.shape[1]:
+            raise ValueError("Fenchel conjugate of -log_det expects a square matrix dual variable.")
+
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if not scale.is_scalar():
+            raise ValueError("Perspective-conjugate of -log_det requires a scalar multiplier.")
+        if scale.is_complex() and not scale.is_real():
+            raise ValueError("Perspective-conjugate of -log_det requires a real multiplier.")
+
+        if scale.is_nonneg() and scale.is_nonpos():
+            return self.indicator_conjugate([y == 0])
+
+        n = y.shape[0]
+        conj_expr = -scale * n - scale * log_det((-1.0 / scale) * y)
+        constraints = [y == y.H, -y >> 0]
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+        return conj_expr, constraints

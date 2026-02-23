@@ -19,7 +19,12 @@ import numpy as np
 from scipy.special import xlogy
 
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.atoms.affine.promote import promote
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.constraints.exponential import ExpCone
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
+from cvxpy.expressions.variable import Variable
 
 # TODO(akshayka): DGP support.
 
@@ -88,6 +93,23 @@ class entr(Elementwise):
         else:
             grad_vals = -np.log(values[0]) - 1
             return [entr.elemwise_grad_to_diag(grad_vals, rows, cols)]
+
+    def conjugate(self, y, perspective_scale=1):
+        self.raise_convex_only_conjugate_not_implemented("entr")
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        # ((s * (-entr))^*)(y) = s * exp(y / s - 1), with closure at s=0.
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        scale_arg = promote(scale, y.shape) if scale.is_scalar() else scale
+        if scale_arg.shape != y.shape:
+            raise ValueError(
+                "Perspective scale for -entr conjugate must be scalar or "
+                "match the dual shape."
+            )
+        z = Variable(y.shape, name="z_neg_entr_conj")
+        return z, [ExpCone(y - scale_arg, scale_arg, z), scale_arg >= 0]
 
     def _domain(self) -> List[Constraint]:
         """Returns constraints describing the domain of the node.

@@ -75,6 +75,19 @@ class exp(Elementwise):
         """
         return False
 
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of exp(x) is y*log(y) - y for y >= 0.
+
+        f*(y) = sup_x { y*x - exp(x) } = y*log(y) - y,  dom f* = { y >= 0 }.
+        We use the convention 0*log(0) = 0.
+        """
+        from cvxpy.atoms.elementwise.rel_entr import rel_entr
+        # (s*exp)^*(y) = y*log(y/s) - y for s >= 0, y >= 0.
+        # rel_entr(y, s) models y*log(y/s) with closure at y = s = 0.
+        conj_expr = rel_entr(y, perspective_scale) - y
+        constraints = [y >= 0, perspective_scale >= 0]
+        return conj_expr, constraints
+
     def _grad(self, values):
         """Gives the (sub/super)gradient of the atom w.r.t. each argument.
 

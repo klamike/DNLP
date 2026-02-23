@@ -22,8 +22,12 @@ import scipy.sparse as sp
 from numpy import linalg as LA
 
 from cvxpy.atoms.atom import Atom
+from cvxpy.atoms.affine.reshape import reshape
+from cvxpy.atoms.quad_over_lin import quad_over_lin
 from cvxpy.atoms.quad_form import QuadForm
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class MatrixFrac(Atom):
@@ -142,6 +146,70 @@ class MatrixFrac(Atom):
         """Quadratic of piecewise affine if x is PWL and P is constant.
         """
         return self.args[0].is_pwl() and self.args[1].is_constant()
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate wrt X for matrix_frac(X, P), with constant PSD P."""
+        P = self.args[1]
+        if not P.is_constant():
+            raise NotImplementedError(
+                "Fenchel conjugate of matrix_frac requires constant P."
+            )
+        if P.parameters():
+            raise NotImplementedError(
+                "Fenchel conjugate of matrix_frac with Parameter matrix is not implemented."
+            )
+        if not P.is_psd():
+            raise NotImplementedError(
+                "Fenchel conjugate of matrix_frac requires PSD P."
+            )
+
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if not scale.is_scalar():
+            raise ValueError("Perspective-conjugate of matrix_frac requires a scalar multiplier.")
+        if scale.is_complex() and not scale.is_real():
+            raise ValueError(
+                "Perspective-conjugate of matrix_frac requires a real multiplier."
+            )
+        if not y.is_real():
+            raise ValueError("Fenchel conjugate of matrix_frac currently requires real dual variables.")
+
+        n = P.shape[0]
+        if y.ndim == 1:
+            if y.shape[0] != n:
+                raise ValueError("Dual variable dimension does not match matrix_frac argument.")
+            y_cols = [reshape(y, (n, 1), order="F")]
+        elif y.ndim == 2:
+            if y.shape[0] != n:
+                raise ValueError("Dual variable dimension does not match matrix_frac argument.")
+            y_cols = [y[:, j:j+1] for j in range(y.shape[1])]
+        else:
+            raise ValueError("Fenchel conjugate of matrix_frac expects vector or matrix dual variable.")
+
+        constraints = []
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+
+        P_val = P.value.toarray() if sp.issparse(P.value) else np.asarray(P.value)
+        P_num = np.asarray(P_val, dtype=float)
+        P_num = 0.5 * (P_num + P_num.T)
+        evals, evecs = np.linalg.eigh(P_num)
+        tol = np.finfo(float).eps * max(1.0, np.max(np.abs(evals))) * P_num.shape[0]
+        pos = evals > tol
+        if not np.any(pos):
+            return 0, constraints
+
+        B = evecs[:, pos] @ np.diag(np.sqrt(evals[pos]))
+        B_t = Constant(B.T)
+        terms = []
+        for y_col in y_cols:
+            w = reshape(B_t @ y_col, (B.shape[1],), order="F")
+            terms.append(quad_over_lin(w, 4.0 * scale))
+        conj_expr = terms[0]
+        for term in terms[1:]:
+            conj_expr = conj_expr + term
+        return conj_expr, constraints
 
 
 @wraps(MatrixFrac)
