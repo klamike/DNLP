@@ -18,7 +18,11 @@ from typing import Tuple
 
 import numpy as np
 
+from cvxpy.atoms.affine.promote import promote
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.atoms.elementwise.rel_entr import rel_entr
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class logistic(Elementwise):
@@ -62,6 +66,42 @@ class logistic(Elementwise):
         """Is the composition non-increasing in argument idx?
         """
         return False
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of logistic(x)=log(1+exp(x)).
+
+        For scale s > 0:
+            (s*logistic)^*(y) = rel_entr(y, s) + rel_entr(s-y, s),
+        with domain 0 <= y <= s.
+
+        For perspective functions (Roos et al. 2020, Appendix B.9):
+        - (0*logistic)^*(y) = δ_0(y): strict convention, not closure
+        """
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for logistic conjugates."
+            )
+        if not y.is_real():
+            raise ValueError("Fenchel conjugate of logistic is defined for real dual variables.")
+
+        scale_arg = promote(scale, y.shape) if scale.is_scalar() else scale
+        if scale_arg.shape != y.shape:
+            raise ValueError(
+                "Perspective scale for logistic conjugate must be scalar or match the dual shape."
+            )
+
+        # Strict perspective convention: (0*f)^*(y) = δ_0(y)
+        # When scale is identically zero, enforce y == 0
+        if scale_arg.is_nonneg() and scale_arg.is_nonpos():
+            return self.indicator_conjugate([y == 0])
+
+        # For s > 0: conjugate with proper domain
+        conj_expr = rel_entr(y, scale_arg) + rel_entr(scale_arg - y, scale_arg)
+        constraints = [scale_arg >= 0, y >= 0, y <= scale_arg]
+        return conj_expr, constraints
 
     def _grad(self, values):
         """Gives the (sub/super)gradient of the atom w.r.t. each argument.

@@ -80,6 +80,39 @@ class Sum(AxisAtom, AffAtom):
         lb, ub = self.args[0].get_bounds()
         return bounds_utils.sum_bounds(lb, ub, axis=self.axis, keepdims=self.keepdims)
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.binary_operators import multiply as ew_multiply
+        from cvxpy.atoms.affine.reshape import reshape as cp_reshape
+        from cvxpy.expressions.constants import Constant as Const
+        arg = self.args[0]
+        axis = self.axis
+        keepdims = self.keepdims
+        if axis is None:
+            # full sum: broadcast scalar y to arg shape
+            adj_y = ew_multiply(Const(np.ones(arg.shape)), y_var)
+        else:
+            # partial sum: expand y back to arg shape
+            if isinstance(axis, int):
+                axis_tuple = (axis,)
+            else:
+                axis_tuple = tuple(axis)
+            ndim = len(arg.shape)
+            axis_tuple = tuple(a if a >= 0 else a + ndim for a in axis_tuple)
+            if keepdims:
+                adj_y = ew_multiply(Const(np.ones(arg.shape)), y_var)
+            else:
+                reshape_shape = []
+                y_idx = 0
+                for dim in range(ndim):
+                    if dim in axis_tuple:
+                        reshape_shape.append(1)
+                    else:
+                        reshape_shape.append(arg.shape[dim])
+                        y_idx += 1
+                expanded = cp_reshape(y_var, tuple(reshape_shape), order="C")
+                adj_y = ew_multiply(Const(np.ones(arg.shape)), expanded)
+        return [(0, adj_y)]
+
     def validate_arguments(self) -> None:
         """Validates arguments using NumPy's sum validation."""
         self.shape_from_args()

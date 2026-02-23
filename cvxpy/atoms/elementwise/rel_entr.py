@@ -20,7 +20,13 @@ import numpy as np
 from scipy.sparse import csc_array
 from scipy.special import rel_entr as rel_entr_scipy
 
+from cvxpy.atoms.affine.promote import promote
+from cvxpy.atoms.affine.binary_operators import multiply
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.constraints.exponential import ExpCone
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
+from cvxpy.expressions.variable import Variable
 
 
 class rel_entr(Elementwise):
@@ -95,3 +101,65 @@ class rel_entr(Elementwise):
         """Returns constraints describing the domain of the node.
         """
         return [self.args[0] >= 0, self.args[1] >= 0]
+
+    @staticmethod
+    def _scale_arg(scale, shape):
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for rel_entr conjugates."
+            )
+        scale_arg = promote(scale, shape) if scale.is_scalar() else scale
+        if scale_arg.shape != shape:
+            raise ValueError(
+                "Perspective scale for rel_entr conjugate must be scalar or match the dual shape."
+            )
+        return scale_arg
+
+    def conjugate(self, y, perspective_scale=1):
+        """Conjugate wrt first argument when second argument is constant."""
+        if not self.args[1].is_constant():
+            raise NotImplementedError(
+                "Fenchel conjugate of rel_entr requires constant second argument."
+            )
+        if not y.is_real():
+            raise ValueError("Fenchel conjugate of rel_entr is defined for real dual variables.")
+
+        scale_arg = self._scale_arg(perspective_scale, y.shape)
+        second_arg = self.args[1]
+        second_arg = promote(second_arg, y.shape) if second_arg.is_scalar() else second_arg
+        if second_arg.shape != y.shape:
+            raise ValueError(
+                "Second argument of rel_entr must be scalar or match the dual shape."
+            )
+        if scale_arg.is_nonneg() and scale_arg.is_nonpos():
+            return self.indicator_conjugate([y == 0])
+
+        z = Variable(y.shape, nonneg=True, name="z_rel_entr_conj")
+        return multiply(second_arg, z), [ExpCone(y - scale_arg, scale_arg, z), second_arg >= 0]
+
+    def conjugate_term(self, nonconstant_arg_indices, dual_vars, perspective_scale=1):
+        if nonconstant_arg_indices == (0,):
+            if len(dual_vars) != 1:
+                raise ValueError("rel_entr unary term-conjugate expects one dual variable.")
+            return self.conjugate(dual_vars[0], perspective_scale=perspective_scale)
+
+        if nonconstant_arg_indices == (0, 1):
+            if len(dual_vars) != 2:
+                raise ValueError("rel_entr full term-conjugate expects two dual variables.")
+            u, v = dual_vars
+            if not (u.is_real() and v.is_real()):
+                raise ValueError("Fenchel conjugate of rel_entr is defined for real dual variables.")
+            if u.shape != v.shape:
+                raise ValueError("rel_entr full term-conjugate expects matching dual shapes.")
+            scale_arg = self._scale_arg(perspective_scale, u.shape)
+            if scale_arg.is_nonneg() and scale_arg.is_nonpos():
+                return self.indicator_conjugate([u == 0, v == 0])
+            return self.indicator_conjugate([ExpCone(u - scale_arg, scale_arg, -v)])
+
+        return super(rel_entr, self).conjugate_term(
+            nonconstant_arg_indices,
+            dual_vars,
+            perspective_scale=perspective_scale,
+        )

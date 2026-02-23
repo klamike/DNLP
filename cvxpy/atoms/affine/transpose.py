@@ -116,6 +116,30 @@ class transpose(AffAtom):
         """
         return (lu.transpose(arg_objs[0], self.axes), [])
 
+    def adjoint(self, y_var):
+        """Adjoint of transpose for Fenchel dualization.
+
+        For real variables: (A^T)* = A^T (standard transpose)
+        For complex variables: (A^T)* = conj(A^T) = A^H (Hermitian transpose)
+
+        This ensures <y, A^T x> = <A^H y, x> for complex inner products.
+        """
+        # Compute the transposed dual variable
+        if self.axes is not None:
+            inv_axes = [0] * len(self.axes)
+            for i, a in enumerate(self.axes):
+                inv_axes[a] = i
+            transposed_y = transpose(y_var, inv_axes)
+        else:
+            transposed_y = transpose(y_var)
+
+        # For complex variables, apply Hermitian (conjugate) transpose
+        if self.args[0].is_complex() or y_var.is_complex():
+            from cvxpy.atoms.affine.conj import conj
+            return [(0, conj(transposed_y))]
+
+        return [(0, transposed_y)]
+
 def permute_dims(expr, axes: List[int]):
     """Permute the dimensions of the expression.
 

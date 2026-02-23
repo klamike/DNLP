@@ -132,6 +132,9 @@ class AddExpression(AffAtom):
         copy.__init__(args)
         return copy
 
+    def adjoint(self, y_var):
+        return [(i, y_var) for i in range(len(self.args))]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

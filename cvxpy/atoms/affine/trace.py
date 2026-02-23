@@ -94,6 +94,13 @@ class Trace(AffAtom):
         """
         return False
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.binary_operators import multiply as ew_multiply
+        from cvxpy.expressions.constants import Constant as Const
+        n = self.args[0].shape[0]
+        adj_y = ew_multiply(y_var, Const(np.eye(n)))
+        return [(0, adj_y)]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

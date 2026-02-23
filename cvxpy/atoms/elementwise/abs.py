@@ -66,6 +66,18 @@ class abs(Elementwise):
         """
         return self.args[idx].is_nonpos()
 
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of |x| is the indicator of -1 <= y <= 1.
+
+        f*(y) = sup_x { y*x - |x| } = 0 if |y| <= 1, else +inf.
+        For complex-valued y, the domain is |y| <= 1 elementwise.
+        """
+        if y.is_complex():
+            constraints = [abs(y) <= perspective_scale]
+        else:
+            constraints = [y >= -perspective_scale, y <= perspective_scale]
+        return self.indicator_conjugate(constraints)
+
     def is_pwl(self) -> bool:
         """Is the atom piecewise linear?
         """

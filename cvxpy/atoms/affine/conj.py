@@ -59,6 +59,9 @@ class conj(AffAtom):
         """
         return self.args[0].is_hermitian()
 
+    def adjoint(self, y_var):
+        return [(0, conj(y_var))]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

@@ -83,6 +83,17 @@ class norm1(AxisAtom):
             return self._label
         return f"{type(self).__name__}({self.args[0].format_labeled()})"
 
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of ||x||_1 is the indicator of ||y||_inf <= 1.
+
+        f*(y) = sup_x { y'x - ||x||_1 } = 0 if ||y||_inf <= 1, else +inf.
+        """
+        from cvxpy.atoms.norm_inf import norm_inf
+        constraints = [
+            self._axis_norm_constraint(y, norm_inf, perspective_scale)
+        ]
+        return self.indicator_conjugate(constraints)
+
     def _domain(self) -> List[Constraint]:
         """Returns constraints describing the domain of the node.
         """

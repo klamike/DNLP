@@ -20,6 +20,8 @@ import numpy as np
 import scipy.sparse as sp
 
 from cvxpy.atoms.atom import Atom
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class normNuc(Atom):
@@ -80,3 +82,22 @@ class normNuc(Atom):
         """Is the composition non-increasing in argument idx?
         """
         return False
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of nuclear norm is spectral-norm ball indicator."""
+        if y.ndim != 2:
+            raise ValueError("Fenchel conjugate of norm_nuc expects a matrix dual variable.")
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if not scale.is_scalar():
+            raise ValueError("Perspective scale for norm_nuc conjugate must be scalar.")
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for norm_nuc conjugates."
+            )
+        from cvxpy.atoms.sigma_max import sigma_max
+        constraints = [sigma_max(y) <= scale]
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+        return self.indicator_conjugate(constraints)

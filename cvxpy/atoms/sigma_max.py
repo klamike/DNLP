@@ -21,6 +21,9 @@ import scipy.sparse as sp
 from numpy import linalg as LA
 
 from cvxpy.atoms.atom import Atom
+from cvxpy.atoms.norm_nuc import normNuc
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
 
 
 class sigma_max(Atom):
@@ -91,3 +94,21 @@ class sigma_max(Atom):
         """Is the composition non-increasing in argument idx?
         """
         return False
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of sigma_max is the nuclear-norm ball indicator."""
+        if y.ndim != 2:
+            raise ValueError("Fenchel conjugate of sigma_max expects a matrix dual variable.")
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if not scale.is_scalar():
+            raise ValueError("Perspective scale for sigma_max conjugate must be scalar.")
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for sigma_max conjugates."
+            )
+        constraints = [normNuc(y) <= scale]
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+        return self.indicator_conjugate(constraints)

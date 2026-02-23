@@ -120,6 +120,14 @@ class max(AxisAtom):
         """
         return False
 
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of max(x) is the indicator of the simplex.
+
+        f*(y) = 0 if y >= 0 and sum(y) = 1, else +inf.
+        """
+        constraints = [y >= 0, self._axis_sum(y) == perspective_scale]
+        return self.indicator_conjugate(constraints)
+
     def is_pwl(self) -> bool:
         """Is the atom piecewise linear?
         """

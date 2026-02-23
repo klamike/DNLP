@@ -311,6 +311,30 @@ class MulExpression(BinaryOperator):
 
         return [DX, DY]
 
+    def adjoint(self, y_var):
+        lhs, rhs = self.args
+        if lhs.is_constant() and not rhs.is_constant():
+            C = lhs
+            is_complex = C.is_complex() or y_var.is_complex()
+            C_adj = conj(C) if C.is_complex() else C
+            if C.is_scalar() or y_var.is_scalar() or len(C.shape) == 1:
+                adj_y = multiply(C_adj, y_var)
+            else:
+                adj_y = C.H @ y_var if is_complex else C.T @ y_var
+            return [(1, adj_y)]
+        if rhs.is_constant() and not lhs.is_constant():
+            C = rhs
+            is_complex = C.is_complex() or y_var.is_complex()
+            C_adj = conj(C) if C.is_complex() else C
+            if C.is_scalar() or y_var.is_scalar() or len(C.shape) == 1:
+                adj_y = multiply(y_var, C_adj)
+            else:
+                adj_y = y_var @ C.H if is_complex else y_var @ C.T
+            return [(0, adj_y)]
+        raise NotImplementedError(
+            "MulExpression adjoint requires one constant argument."
+        )
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:
@@ -412,6 +436,20 @@ class multiply(MulExpression):
         """
         return (self.args[0].is_psd() and self.args[1].is_nsd()) or \
                (self.args[0].is_nsd() and self.args[1].is_psd())
+
+    def adjoint(self, y_var):
+        lhs, rhs = self.args
+        if lhs.is_constant() and not rhs.is_constant():
+            C = lhs
+            adj_y = multiply(conj(C), y_var) if C.is_complex() else multiply(C, y_var)
+            return [(1, adj_y)]
+        if rhs.is_constant() and not lhs.is_constant():
+            C = rhs
+            adj_y = multiply(y_var, conj(C)) if C.is_complex() else multiply(y_var, C)
+            return [(0, adj_y)]
+        raise NotImplementedError(
+            "multiply adjoint requires one constant argument."
+        )
 
     def _grad(self, values):
         """Gives the (sub/super)gradient of elementwise multiply.
@@ -555,6 +593,13 @@ class DivExpression(BinaryOperator):
             return self.args[1].is_nonpos()
         else:
             return self.args[0].is_nonneg()
+
+    def adjoint(self, y_var):
+        if self.args[1].is_constant():
+            C = self.args[1]
+            adj_y = y_var / conj(C) if C.is_complex() else y_var / C
+            return [(0, adj_y)]
+        raise NotImplementedError("DivExpression adjoint requires constant denominator.")
 
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None

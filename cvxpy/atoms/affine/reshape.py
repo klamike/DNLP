@@ -130,6 +130,9 @@ class reshape(AffAtom):
         """
         return [self._shape, self.order]
 
+    def adjoint(self, y_var):
+        return [(0, reshape(y_var, self.args[0].shape, order=self.order))]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

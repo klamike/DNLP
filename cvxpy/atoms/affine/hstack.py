@@ -63,6 +63,22 @@ class Hstack(AffAtom):
     def validate_arguments(self) -> None:
         self.shape_from_args()
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.reshape import reshape as cp_reshape
+        result = []
+        col_offset = 0
+        for i, arg in enumerate(self.args):
+            ncols = arg.shape[1] if len(arg.shape) > 1 else 1
+            if len(y_var.shape) > 1:
+                y_slice = y_var[:, col_offset:col_offset + ncols]
+            else:
+                y_slice = y_var[col_offset:col_offset + ncols]
+            if y_slice.shape != arg.shape:
+                y_slice = cp_reshape(y_slice, arg.shape, order="F")
+            result.append((i, y_slice))
+            col_offset += ncols
+        return result
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

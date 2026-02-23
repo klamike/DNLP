@@ -102,6 +102,49 @@ class kron(AffAtom):
         case2 = self.args[0].is_nsd() and self.args[1].is_psd()
         return case1 or case2
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.binary_operators import multiply as ew_multiply
+        from cvxpy.atoms.affine.conj import conj as conj_atom
+        from cvxpy.atoms.affine.hstack import hstack
+        from cvxpy.atoms.affine.reshape import reshape
+        from cvxpy.atoms.affine.sum import sum as cp_sum
+        from cvxpy.atoms.affine.vstack import vstack
+        lhs, rhs = self.args
+        if lhs.is_constant() and not rhs.is_constant():
+            C = lhs
+            x = rhs
+            p, q = C.shape
+            m, n = x.shape
+            parts = []
+            for a in range(p):
+                for b in range(q):
+                    c_ab = conj_atom(C[a, b]) if C.is_complex() else C[a, b]
+                    block = y_var[a * m:(a + 1) * m, b * n:(b + 1) * n]
+                    parts.append(ew_multiply(c_ab, block))
+            adj_y = parts[0]
+            for part in parts[1:]:
+                adj_y = adj_y + part
+            return [(1, adj_y)]
+        if rhs.is_constant() and not lhs.is_constant():
+            C = rhs
+            x = lhs
+            p, q = x.shape
+            r, s_ = C.shape
+            C_conj = conj_atom(C) if C.is_complex() else C
+            rows = []
+            for a in range(p):
+                row_parts = []
+                for b in range(q):
+                    block = y_var[a * r:(a + 1) * r, b * s_:(b + 1) * s_]
+                    val = cp_sum(ew_multiply(C_conj, block))
+                    row_parts.append(reshape(val, (1, 1)))
+                rows.append(hstack(row_parts))
+            adj_y = vstack(rows)
+            if adj_y.shape != x.shape:
+                adj_y = reshape(adj_y, x.shape, order="F")
+            return [(0, adj_y)]
+        raise NotImplementedError("kron adjoint requires one constant argument.")
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

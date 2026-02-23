@@ -47,6 +47,9 @@ class real(AffAtom):
         """
         return False
 
+    def adjoint(self, y_var):
+        return [(0, y_var)]
+
     def is_symmetric(self) -> bool:
         """Is the expression symmetric?
         """

@@ -129,6 +129,30 @@ class cumsum(AffAtom, AxisAtom):
         grad = sp.kron(sp.kron(sp.eye_array(post_size), triu), sp.eye_array(pre_size))
         return [sp.csc_array(grad)]
 
+    def adjoint(self, y_var):
+        from cvxpy.expressions.constants import Constant as Const
+        axis = self.axis
+        # Adjoint of cumsum is reverse cumsum: adj[k] = sum(y[k:])
+        # Implemented as: upper-triangular ones matrix multiplication
+        if axis is None or axis == 0:
+            if len(y_var.shape) <= 1:
+                n = y_var.shape[0] if y_var.shape else 1
+                U = np.triu(np.ones((n, n), dtype=float))
+                adj_y = Const(U) @ y_var
+            else:
+                m = y_var.shape[0]
+                U = np.triu(np.ones((m, m), dtype=float))
+                adj_y = Const(U) @ y_var
+        elif axis == 1 and len(y_var.shape) == 2:
+            n = y_var.shape[1]
+            U = np.triu(np.ones((n, n), dtype=float))
+            adj_y = y_var @ Const(U)
+        else:
+            raise NotImplementedError(
+                f"cumsum adjoint for axis={axis} on {len(y_var.shape)}D not supported."
+            )
+        return [(0, adj_y)]
+
     def get_data(self):
         """Returns the axis being summed."""
         return [self.axis]

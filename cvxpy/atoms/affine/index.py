@@ -103,6 +103,16 @@ class index(AffAtom):
         """Returns the (row slice, column slice)."""
         return [self.key, self._orig_key]
 
+    def adjoint(self, y_var):
+        from cvxpy.expressions.constants import Constant as Const
+        arg = self.args[0]
+        scatter = _index_scatter_matrix(arg.shape, self.shape, self.key)
+        out_size = int(np.prod(self.shape)) if self.shape else 1
+        y_flat = reshape(y_var, (out_size,), order="F")
+        adj_flat = Const(scatter) @ y_flat
+        adj_y = reshape(adj_flat, arg.shape, order="F")
+        return [(0, adj_y)]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, list[Constraint]]:
@@ -197,6 +207,16 @@ class special_index(AffAtom):
         )
         return lowered.grad
 
+    def adjoint(self, y_var):
+        from cvxpy.expressions.constants import Constant as Const
+        arg = self.args[0]
+        scatter = _index_scatter_matrix(arg.shape, self.shape, self.key)
+        out_size = int(np.prod(self.shape)) if self.shape else 1
+        y_flat = reshape(y_var, (out_size,), order="F")
+        adj_flat = Const(scatter) @ y_flat
+        adj_y = reshape(adj_flat, arg.shape, order="F")
+        return [(0, adj_y)]
+
     def graph_implementation(self,
                             arg_objs: list,
                             shape: Tuple[int, ...],
@@ -224,3 +244,14 @@ class special_index(AffAtom):
         mul_expr = lu.mul_expr(mul_const, vec_arg, (mul_mat.shape[0],))
         obj = lu.reshape(mul_expr, final_shape)
         return (obj, [])
+
+
+def _index_scatter_matrix(arg_shape, out_shape, key):
+    """Build sparse scatter matrix S^T so that S^T @ vec_F(y) = vec_F(scatter(y))."""
+    arg_size = int(np.prod(arg_shape)) if arg_shape else 1
+    dummy = np.arange(arg_size).reshape(arg_shape, order="F") if arg_shape else np.array(0)
+    selected = np.asarray(dummy[key]).ravel(order="F")
+    return sp.csc_matrix(
+        (np.ones(len(selected), dtype=float), (selected, np.arange(len(selected)))),
+        shape=(arg_size, len(selected)),
+    )

@@ -154,9 +154,6 @@ class Pnorm(AxisAtom):
 
     def validate_arguments(self) -> None:
         super(Pnorm, self).validate_arguments()
-        if self.axis is not None and self.p != 2:
-            raise ValueError(
-                "The axis parameter is only supported for p=2.")
         if self.p < 1 and self.args[0].is_complex():
             raise ValueError("pnorm(x, p) cannot have x complex for p < 1.")
 
@@ -211,6 +208,35 @@ class Pnorm(AxisAtom):
         if self._label is not None:
             return self._label
         return f"{type(self).__name__}({self.args[0].format_labeled()}, {self.p})"
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of ||x||_p (for p > 1) is indicator of ||y||_q <= 1.
+
+        For p > 1 with 1/p + 1/q = 1:
+        f*(y) = 0 if ||y||_q <= 1, else +inf.
+
+        Supports axis=None and axis-aware norms when defined by pnorm.
+
+        For complex variables, the norm is real-valued, so the dual constraint
+        is on the real norm ||y||_q.
+        """
+        if self.p <= 1:
+            raise NotImplementedError(
+                "Fenchel conjugate of pnorm with p <= 1 is not implemented."
+            )
+
+        # Complex norms are supported (norms are always real-valued)
+        # The dual variable y can be complex, and ||y||_q is computed correctly
+
+        from fractions import Fraction
+        if isinstance(self.p, Fraction):
+            q = Fraction(1, 1) / (Fraction(1, 1) - Fraction(1, 1) / self.p)
+        else:
+            q = float(self.p) / (float(self.p) - 1)
+        constraints = [
+            self._axis_norm_constraint(y, pnorm, perspective_scale, q)
+        ]
+        return self.indicator_conjugate(constraints)
 
     def _domain(self) -> List[Constraint]:
         """Returns constraints describing the domain of the node.

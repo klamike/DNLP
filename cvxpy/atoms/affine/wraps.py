@@ -45,6 +45,10 @@ class Wrap(AffAtom):
         """
         return self.args[0].shape
 
+    def adjoint(self, y_var):
+        """Identity adjoint for no-op wrapper."""
+        return [(0, y_var)]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

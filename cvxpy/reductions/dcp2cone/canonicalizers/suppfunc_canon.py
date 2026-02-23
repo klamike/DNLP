@@ -2,6 +2,7 @@ import numpy as np
 
 from cvxpy import SOC, Variable, hstack
 from cvxpy.constraints.exponential import ExpCone
+from cvxpy.constraints.power import PowCone3D, PowConeND
 from cvxpy.reductions.solvers.conic_solvers.scs_conif import (
     scs_psdvec_to_psdmat,
 )
@@ -56,5 +57,24 @@ def suppfunc_canon(expr, args, solver_context: SolverInfo | None = None):
         # this to a primal exponential cone as follows.
         ec = ExpCone(-curr_v, -curr_u, np.exp(1) * curr_w)
         local_cons.append(ec)
+    pow3d_sels = K_sels.get("pow3d", [])
+    if pow3d_sels:
+        alphas = getattr(parent, "_K_pow3d_alphas", [])
+        if len(alphas) != len(pow3d_sels):
+            raise ValueError("SuppFunc power-cone metadata mismatch for PowCone3D.")
+        for rows, alpha in zip(pow3d_sels, alphas):
+            u = eta[rows[0]]
+            v = eta[rows[1]]
+            w = eta[rows[2]]
+            local_cons.append(PowCone3D(u / alpha, v / (1 - alpha), w, alpha))
+    pownd_sels = K_sels.get("pownd", [])
+    if pownd_sels:
+        alphas = getattr(parent, "_K_pownd_alphas", [])
+        if len(alphas) != len(pownd_sels):
+            raise ValueError("SuppFunc power-cone metadata mismatch for PowConeND.")
+        for (rows, _), alpha in zip(pownd_sels, alphas):
+            w = eta[rows[:-1]]
+            z = eta[rows[-1]]
+            local_cons.append(PowConeND(w / alpha, z, alpha, axis=0))
     epigraph = b @ eta
     return epigraph, local_cons

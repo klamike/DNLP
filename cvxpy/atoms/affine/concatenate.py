@@ -73,6 +73,28 @@ class Concatenate(AffAtom):
         except (ValueError, AxisError) as e:
             raise ValueError(f"Invalid arguments for cp.concatenate: {e}") from e
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.reshape import reshape as cp_reshape
+        axis = self.axis
+        result = []
+        offset = 0
+        for i, arg in enumerate(self.args):
+            size_along_axis = arg.shape[axis] if axis is not None else arg.size
+            if axis is not None:
+                slices = [slice(None)] * len(y_var.shape)
+                slices[axis] = slice(offset, offset + size_along_axis)
+                y_slice = y_var[tuple(slices)]
+            else:
+                y_flat = cp_reshape(y_var, (y_var.size,), order="F")
+                y_slice = cp_reshape(
+                    y_flat[offset:offset + arg.size], arg.shape, order="F"
+                )
+            if y_slice.shape != arg.shape:
+                y_slice = cp_reshape(y_slice, arg.shape, order="F")
+            result.append((i, y_slice))
+            offset += size_along_axis
+        return result
+
     def graph_implementation(
         self,
         arg_objs,

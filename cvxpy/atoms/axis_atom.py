@@ -135,3 +135,24 @@ class AxisAtom(Atom):
             A SciPy sparse matrix or None.
         """
         raise NotImplementedError()
+
+    def _axis_sum(self, expr):
+        """Reduce by sum using this atom's axis/keepdims semantics."""
+        from cvxpy.atoms.affine.sum import sum as cp_sum
+        if self.axis is None:
+            return cp_sum(expr)
+        return cp_sum(expr, axis=self.axis, keepdims=self.keepdims)
+
+    def _axis_norm_constraint(self, y, norm_fn, perspective_scale, *norm_args):
+        """Build <= perspective_scale norm constraint with axis semantics."""
+        if self.axis is None:
+            return norm_fn(y, *norm_args) <= perspective_scale
+        return (
+            norm_fn(
+                y,
+                *norm_args,
+                axis=self.axis,
+                keepdims=self.keepdims,
+            )
+            <= perspective_scale
+        )

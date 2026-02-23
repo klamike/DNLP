@@ -63,7 +63,10 @@ class diag_vec(AffAtom):
 
     def get_data(self) -> list[int]:
         return [self.k]
-    
+
+    def adjoint(self, y_var):
+        return [(0, diag_mat(y_var, self.k))]
+
     def validate_arguments(self) -> None:
         """Checks that the argument is a vector.
         """
@@ -142,9 +145,12 @@ class diag_mat(AffAtom):
     def __init__(self, expr, k: int = 0) -> None:
         self.k = k
         super(diag_mat, self).__init__(expr)
-    
+
     def get_data(self) -> list[int]:
         return [self.k]
+
+    def adjoint(self, y_var):
+        return [(0, diag_vec(y_var, self.k))]
 
     def validate_arguments(self) -> None:
         """Checks that the argument is a square matrix.

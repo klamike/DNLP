@@ -46,6 +46,9 @@ class imag(AffAtom):
         """
         return False
 
+    def adjoint(self, y_var):
+        return [(0, 1j * y_var)]
+
     def is_symmetric(self) -> bool:
         """Is the expression symmetric?
         """

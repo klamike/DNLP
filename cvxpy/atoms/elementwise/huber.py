@@ -19,7 +19,13 @@ from typing import Tuple
 import numpy as np
 import scipy.special
 
+from cvxpy.atoms.affine.promote import promote
+from cvxpy.atoms.elementwise.abs import abs as cvx_abs
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.atoms.elementwise.power import power
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
+from cvxpy.expressions.variable import Variable
 
 # TODO(akshayka): DGP support.
 
@@ -113,3 +119,31 @@ class huber(Elementwise):
         min_val = np.minimum(np.abs(values[0]), self.M.value)
         grad_vals = 2 * np.multiply(np.sign(values[0]), min_val)
         return [huber.elemwise_grad_to_diag(grad_vals, rows, cols)]
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of Huber(x, M).
+
+        For scale s >= 0:
+            (s*Huber)^*(y) = y^2 / (4s),   if |y| <= 2 M s,
+            +inf otherwise.
+        """
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for huber conjugates."
+            )
+        if not y.is_real():
+            raise ValueError("Fenchel conjugate of huber is defined for real dual variables.")
+
+        scale_arg = promote(scale, y.shape) if scale.is_scalar() else scale
+        if scale_arg.shape != y.shape:
+            raise ValueError(
+                "Perspective scale for huber conjugate must be scalar or match the dual shape."
+            )
+
+        quad_expr, quad_constraints = power(Variable(y.shape), 2).conjugate(
+            y, perspective_scale=scale_arg
+        )
+        return quad_expr, quad_constraints + [cvx_abs(y) <= 2 * self.M * scale_arg]

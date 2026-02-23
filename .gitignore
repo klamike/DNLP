@@ -63,3 +63,4 @@ cvxpy/version.py
 # Hypothesis testing
 .hypothesis/
 .aider*
+**.cover

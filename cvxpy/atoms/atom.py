@@ -526,6 +526,226 @@ class Atom(Expression):
             return intf.DEFAULT_INTF.const_to_matrix(result)
         return new_numeric
 
+    def conjugate(self, y, perspective_scale=1):
+        """Returns tuple (`expr`, `constraints`) where `expr` is f*(y).
+
+        When `perspective_scale` is provided, implementations may return
+        ((perspective_scale * f)^*)(y). Atoms that do not support scaled
+        perspective-conjugates should raise NotImplementedError.
+        """
+        if not self.is_atom_convex():
+            self.raise_convex_only_conjugate_not_implemented(type(self).__name__)
+        return self._generic_term_conjugate(
+            nonconstant_arg_indices=(0,),
+            dual_vars=(y,),
+            perspective_scale=perspective_scale,
+            negate_atom=False,
+        )
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        """Returns conjugate of -f for concave atoms.
+
+        Implementations may return ((perspective_scale * (-f))^*)(y).
+        """
+        if not self.is_atom_concave():
+            raise NotImplementedError(
+                f"Fenchel conjugate of -{type(self).__name__} is not implemented."
+            )
+        return self._generic_term_conjugate(
+            nonconstant_arg_indices=(0,),
+            dual_vars=(y,),
+            perspective_scale=perspective_scale,
+            negate_atom=True,
+        )
+
+    def conjugate_term(self, nonconstant_arg_indices, dual_vars, perspective_scale=1):
+        """Conjugate for objective terms formed from this atom.
+
+        The default implementation supports unary terms where only the first
+        atom argument is non-constant, i.e., term shape
+            f(affine_arg0, constant_arg1, ...).
+        """
+        nonconstant_arg_indices = tuple(nonconstant_arg_indices)
+        if len(dual_vars) != len(nonconstant_arg_indices):
+            raise ValueError(
+                f"{type(self).__name__}.conjugate_term expected one dual variable per "
+                "non-constant argument."
+            )
+        if nonconstant_arg_indices == (0,) and len(dual_vars) == 1 and type(self).conjugate is not Atom.conjugate:
+            try:
+                return self.conjugate(dual_vars[0], perspective_scale=perspective_scale)
+            except NotImplementedError:
+                pass
+        return self._generic_term_conjugate(
+            nonconstant_arg_indices=nonconstant_arg_indices,
+            dual_vars=dual_vars,
+            perspective_scale=perspective_scale,
+            negate_atom=False,
+        )
+
+    def negative_conjugate_term(
+        self,
+        nonconstant_arg_indices,
+        dual_vars,
+        perspective_scale=1,
+    ):
+        """Conjugate of -f for objective terms formed from this atom."""
+        nonconstant_arg_indices = tuple(nonconstant_arg_indices)
+        if len(dual_vars) != len(nonconstant_arg_indices):
+            raise ValueError(
+                f"{type(self).__name__}.negative_conjugate_term expected one dual "
+                "variable per non-constant argument."
+            )
+        if nonconstant_arg_indices == (0,) and len(dual_vars) == 1 and type(self).negative_conjugate is not Atom.negative_conjugate:
+            try:
+                return self.negative_conjugate(
+                    dual_vars[0],
+                    perspective_scale=perspective_scale,
+                )
+            except NotImplementedError:
+                pass
+        return self._generic_term_conjugate(
+            nonconstant_arg_indices=nonconstant_arg_indices,
+            dual_vars=dual_vars,
+            perspective_scale=perspective_scale,
+            negate_atom=True,
+        )
+
+    @staticmethod
+    def _fenchel_as_expr(expr):
+        return expr if isinstance(expr, Expression) else Constant(np.asarray(expr))
+
+    @staticmethod
+    def _fenchel_flatten(expr):
+        from cvxpy.atoms.affine.reshape import reshape
+        return reshape(expr, (expr.size,), order="F")
+
+    @staticmethod
+    def _fenchel_broadcast_scale(scale, target_shape):
+        from cvxpy.atoms.affine.binary_operators import multiply
+
+        if scale.shape == target_shape:
+            return scale
+        if scale.is_scalar():
+            if target_shape == ():
+                return scale
+            return multiply(Constant(np.ones(target_shape, dtype=float)), scale)
+        raise ValueError(
+            f"Perspective scale shape {scale.shape} is incompatible with target shape {target_shape}."
+        )
+
+    @staticmethod
+    def _fenchel_slice(flat_var, offset, shape):
+        from cvxpy.atoms.affine.reshape import reshape
+
+        size = int(np.prod(shape, dtype=int)) if shape != () else 1
+        segment = flat_var[offset:offset + size]
+        if shape == ():
+            return segment[0], offset + 1
+        return reshape(segment, shape, order="F"), offset + size
+
+    def _generic_term_conjugate(
+        self,
+        nonconstant_arg_indices,
+        dual_vars,
+        perspective_scale=1,
+        negate_atom=False,
+    ):
+        from cvxpy.atoms.affine.hstack import hstack
+        from cvxpy.expressions.variable import Variable
+        from cvxpy.transforms.suppfunc import SuppFunc
+
+        nonconstant_arg_indices = tuple(nonconstant_arg_indices)
+        if len(dual_vars) != len(nonconstant_arg_indices):
+            raise ValueError(
+                f"{type(self).__name__} generic Fenchel term-conjugate expects one "
+                "dual variable per non-constant argument."
+            )
+        if not nonconstant_arg_indices:
+            raise NotImplementedError(
+                f"{type(self).__name__} generic Fenchel term-conjugate requires at "
+                "least one non-constant argument."
+            )
+        if any(idx < 0 or idx >= len(self.args) for idx in nonconstant_arg_indices):
+            raise ValueError("Invalid non-constant argument index in Fenchel term-conjugate.")
+        if any(self.args[idx].is_complex() for idx in nonconstant_arg_indices) or any(dv.is_complex() for dv in dual_vars):
+            raise NotImplementedError(
+                f"Generic Fenchel term-conjugate for {type(self).__name__} does not "
+                "currently support complex non-constant arguments."
+            )
+        for idx, dual_var in zip(nonconstant_arg_indices, dual_vars):
+            if dual_var.shape != self.args[idx].shape:
+                raise ValueError(
+                    f"Dual variable shape {dual_var.shape} does not match argument "
+                    f"shape {self.args[idx].shape} for {type(self).__name__}."
+                )
+
+        scale = self._fenchel_as_expr(perspective_scale)
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                f"Generic Fenchel term-conjugate for {type(self).__name__} does not "
+                "support complex perspective scales."
+            )
+        scale = self._fenchel_broadcast_scale(scale, self.shape)
+        if not scale.is_nonneg():
+            raise ValueError(
+                f"Perspective scale for {type(self).__name__} term-conjugate must be nonnegative."
+            )
+
+        total_dim = int(sum(self.args[idx].size for idx in nonconstant_arg_indices) + self.size)
+        support_var = Variable((total_dim,))
+
+        lifted_args = list(self.args)
+        offset = 0
+        for idx in nonconstant_arg_indices:
+            lifted_arg, offset = self._fenchel_slice(support_var, offset, self.args[idx].shape)
+            lifted_args[idx] = lifted_arg
+        t_var, offset = self._fenchel_slice(support_var, offset, self.shape)
+        if offset != total_dim:
+            raise RuntimeError("Fenchel support-variable assembly has inconsistent dimensions.")
+
+        lifted_atom = self.copy(args=lifted_args)
+        param_map = {}
+        for param in lifted_atom.parameters() + scale.parameters():
+            if param.value is None:
+                raise NotImplementedError(
+                    f"Generic Fenchel term-conjugate for {type(self).__name__} requires "
+                    "all Parameters to have numeric values."
+                )
+            param_map[id(param)] = Constant(np.asarray(param.value))
+        if param_map:
+            lifted_atom = lifted_atom.tree_copy(param_map)
+            scale = scale.tree_copy(param_map)
+
+        core_expr = -lifted_atom if negate_atom else lifted_atom
+        if not core_expr.is_convex():
+            op = "(-atom)" if negate_atom else "atom"
+            raise NotImplementedError(
+                f"Generic Fenchel term-conjugate requires convex {op} after fixing "
+                f"constant arguments for {type(self).__name__}."
+            )
+
+        set_constraints = [core_expr <= t_var]
+        set_constraints.extend(core_expr.domain)
+
+        support = SuppFunc(support_var, set_constraints)
+        direction_parts = [self._fenchel_flatten(dv) for dv in dual_vars]
+        direction_parts.append(-self._fenchel_flatten(scale))
+        direction = hstack(direction_parts)
+        return support(direction), []
+
+    @staticmethod
+    def indicator_conjugate(constraints):
+        """Return an indicator-form conjugate represented by explicit constraints."""
+        return 0, constraints
+
+    @staticmethod
+    def raise_convex_only_conjugate_not_implemented(atom_name):
+        raise NotImplementedError(
+            "Fenchel conjugate is currently defined only for convex atoms; "
+            f"{atom_name} is concave."
+        )
+
     def atoms(self) -> List['Atom']:
         """A list of the atom types present amongst this atom's arguments.
         """

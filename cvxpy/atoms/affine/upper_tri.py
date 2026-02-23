@@ -84,6 +84,17 @@ class upper_tri(AffAtom):
         """
         return True
 
+    def adjoint(self, y_var):
+        from cvxpy.expressions.constants import Constant as Const
+        arg = self.args[0]
+        n = arg.shape[0]
+        scatter = _upper_tri_scatter(n)
+        out_size = self.size
+        y_flat = reshape(y_var, (out_size,), order="F")
+        adj_flat = Const(scatter) @ y_flat
+        adj_y = reshape(adj_flat, arg.shape, order="F")
+        return [(0, adj_y)]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:
@@ -174,3 +185,15 @@ def upper_tri_to_full(n: int) -> sp.csc_array:
 
     # Construct and return the sparse matrix
     return sp.csc_array((values, (row_idx, col_idx)), shape=(n * n, entries))
+
+
+def _upper_tri_scatter(n):
+    """Scatter matrix for upper_tri: places vector back into strict upper triangle."""
+    rows, cols = np.triu_indices(n, k=1)
+    mat_size = n * n
+    flat_indices = rows + n * cols  # F-order flat index into the n*n matrix
+    vec_size = len(flat_indices)
+    return sp.csc_matrix(
+        (np.ones(vec_size, dtype=float), (flat_indices, np.arange(vec_size))),
+        shape=(mat_size, vec_size),
+    )

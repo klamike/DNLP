@@ -112,6 +112,53 @@ class conv(AffAtom):
         """
         return self.args[0].is_nonpos()
 
+    def adjoint(self, y_var):
+        """Adjoint of convolution w.r.t. the second (variable) argument.
+
+        For y = conv(c, x), the adjoint is correlation with flipped c.
+        """
+        from cvxpy.atoms.affine.reshape import reshape as cp_reshape
+        from cvxpy.expressions.constants import Constant
+
+        # c is args[0] (constant), x is args[1] (variable)
+        c = self.args[0]
+        x = self.args[1]
+
+        if not c.is_constant() or c.value is None:
+            raise NotImplementedError(
+                "conv adjoint requires constant first argument with numeric value"
+            )
+
+        # Get constant value
+        c_val = np.asarray(c.value).ravel()  # Flatten to 1D
+        m = len(c_val)
+        n = x.size
+
+        # Build convolution transpose matrix using scipy
+        # For y = C @ x, adjoint is C.T @ y_var
+        try:
+            from scipy.linalg import toeplitz
+            # C is Toeplitz: column [c[0], c[1], ..., c[m-1], 0, ..., 0]
+            #                row [c[0], 0, ..., 0]
+            col = np.pad(c_val, (0, n - 1))
+            row = np.pad([c_val[0]], (0, n - 1))
+            C = toeplitz(col, row)
+        except ImportError:
+            # Fallback if scipy not available: build manually
+            C = np.zeros((m + n - 1, n))
+            for j in range(n):
+                C[j:j+m, j] = c_val
+
+        # Adjoint: C.T @ y_var
+        y_flat = y_var if y_var.ndim == 1 else cp_reshape(y_var, (y_var.size,), order='F')
+        adj_x = Constant(C.T) @ y_flat
+
+        # Reshape to match x shape
+        if x.ndim == 2:
+            adj_x = cp_reshape(adj_x, (n, 1), order='F')
+
+        return [(1, adj_x)]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:
@@ -208,6 +255,47 @@ class convolve(AffAtom):
         """Is the composition non-increasing in argument idx?
         """
         return self.args[0].is_nonpos()
+
+    def adjoint(self, y_var):
+        """Adjoint of convolution w.r.t. the second (variable) argument.
+
+        For y = convolve(c, x), the adjoint is correlation with flipped c.
+        """
+        from cvxpy.expressions.constants import Constant
+
+        # c is args[0] (constant), x is args[1] (variable)
+        c = self.args[0]
+        x = self.args[1]
+
+        if not c.is_constant() or c.value is None:
+            raise NotImplementedError(
+                "convolve adjoint requires constant first argument with numeric value"
+            )
+
+        # Get constant value
+        c_val = np.asarray(c.value).ravel()  # Flatten to 1D
+        m = len(c_val)
+        n = x.size
+
+        # Build convolution transpose matrix using scipy
+        # For y = C @ x, adjoint is C.T @ y_var
+        try:
+            from scipy.linalg import toeplitz
+            # C is Toeplitz: column [c[0], c[1], ..., c[m-1], 0, ..., 0]
+            #                row [c[0], 0, ..., 0]
+            col = np.pad(c_val, (0, n - 1))
+            row = np.pad([c_val[0]], (0, n - 1))
+            C = toeplitz(col, row)
+        except ImportError:
+            # Fallback if scipy not available: build manually
+            C = np.zeros((m + n - 1, n))
+            for j in range(n):
+                C[j:j+m, j] = c_val
+
+        # Adjoint: C.T @ y_var
+        adj_x = Constant(C.T) @ y_var
+
+        return [(1, adj_x)]
 
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None

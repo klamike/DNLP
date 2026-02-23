@@ -144,9 +144,10 @@ class PowCone3D(Cone):
     def _dual_cone(self, *args):
         """Implements the dual cone of PowCone3D See Pg 85
         of the MOSEK modelling cookbook for more information"""
-        if args is None:
-            PowCone3D(self.dual_variables[0]/self.alpha, self.dual_variables[1]/(1-self.alpha),
-                      self.dual_variables[2], self.alpha)
+        if args is None or args == ():
+            return PowCone3D(self.dual_variables[0]/self.alpha,
+                             self.dual_variables[1]/(1-self.alpha),
+                             self.dual_variables[2], self.alpha)
         else:
             # some assertions for verifying `args`
             args_shapes = [arg.shape for arg in args]
@@ -327,5 +328,5 @@ class PowConeND(Cone):
             instance_args_shapes = [arg.shape for arg in self.args]
             assert len(args) == len(self.args)
             assert args_shapes == instance_args_shapes
-            assert args[0].value.shape == self.alpha.value.shape
+            assert args[0].shape == self.alpha.shape
             return PowConeND(args[0]/self.alpha, args[1], self.alpha, axis=self.axis)

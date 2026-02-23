@@ -180,6 +180,44 @@ class TestSupportFunctions(BaseTest):
         expect = np.trace(A)
         self.assertLessEqual(abs(actual1 - expect), 1e-4)
 
+    def test_powcone3d(self) -> None:
+        x = cp.Variable(shape=(3,))
+        alpha = 0.3
+        set_constraints = [cp.PowCone3D(x[0], x[1], x[2], alpha), cp.sum(x[:2]) <= 1.0]
+        sigma = cp.suppfunc(x, set_constraints)
+
+        y_val = np.array([0.8, -0.2, 0.4])
+        y = cp.Variable(shape=(3,))
+        epi_prob = cp.Problem(cp.Minimize(sigma(y)), [y == y_val])
+        epi_prob.solve(solver='SCS', eps=1e-7)
+
+        x_dir = cp.Variable(shape=(3,))
+        dir_constraints = [cp.PowCone3D(x_dir[0], x_dir[1], x_dir[2], alpha), cp.sum(x_dir[:2]) <= 1.0]
+        dir_prob = cp.Problem(cp.Maximize(y_val @ x_dir), dir_constraints)
+        dir_prob.solve(solver='SCS', eps=1e-7)
+
+        self.assertLessEqual(abs(epi_prob.value - dir_prob.value), 1e-5)
+        self.assertLessEqual(abs(sigma(y_val).value - dir_prob.value), 1e-5)
+
+    def test_powconend(self) -> None:
+        x = cp.Variable(shape=(3,))
+        alpha = np.array([0.4, 0.6])
+        set_constraints = [cp.PowConeND(x[:2], x[2], alpha), cp.sum(x[:2]) <= 1.0]
+        sigma = cp.suppfunc(x, set_constraints)
+
+        y_val = np.array([0.3, 0.7, -0.5])
+        y = cp.Variable(shape=(3,))
+        epi_prob = cp.Problem(cp.Minimize(sigma(y)), [y == y_val])
+        epi_prob.solve(solver='SCS', eps=1e-7)
+
+        x_dir = cp.Variable(shape=(3,))
+        dir_constraints = [cp.PowConeND(x_dir[:2], x_dir[2], alpha), cp.sum(x_dir[:2]) <= 1.0]
+        dir_prob = cp.Problem(cp.Maximize(y_val @ x_dir), dir_constraints)
+        dir_prob.solve(solver='SCS', eps=1e-7)
+
+        self.assertLessEqual(abs(epi_prob.value - dir_prob.value), 1e-5)
+        self.assertLessEqual(abs(sigma(y_val).value - dir_prob.value), 1e-5)
+
     def test_invalid_solver(self) -> None:
         n = 3
         x = cp.Variable(shape=(n,))

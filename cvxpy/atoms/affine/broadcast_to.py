@@ -56,6 +56,24 @@ class broadcast_to(AffAtom):
     def shape_from_args(self) -> Tuple[int, ...]:
         return self.broadcast_shape
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.reshape import reshape as cp_reshape
+        from cvxpy.atoms.affine.sum import sum as cp_sum
+        arg_shape = self.args[0].shape
+        out_shape = self.broadcast_shape
+        # Sum over broadcast dimensions to get adjoint
+        sum_axes = []
+        pad = len(out_shape) - len(arg_shape)
+        padded = (1,) * pad + arg_shape
+        for i, (a, o) in enumerate(zip(padded, out_shape)):
+            if a == 1 and o != 1:
+                sum_axes.append(i)
+        adj_y = y_var
+        if sum_axes:
+            adj_y = cp_sum(adj_y, axis=tuple(sum_axes), keepdims=True)
+        adj_y = cp_reshape(adj_y, arg_shape, order="F")
+        return [(0, adj_y)]
+
     def graph_implementation(
         self,
         arg_objs,

@@ -64,6 +64,10 @@ from cvxpy.transforms import (
     suppfunc as suppfunc,
 )
 from cvxpy import logic as logic
+from cvxpy.reductions.fenchel_dual import (
+    FenchelDual as FenchelDual,
+    fenchel_dual as fenchel_dual,
+)
 from cvxpy.reductions.solvers.defines import installed_solvers as installed_solvers
 from cvxpy.settings import (
     CBC as CBC,

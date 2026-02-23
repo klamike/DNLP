@@ -19,8 +19,13 @@ import scipy.sparse as sp
 
 import cvxpy.utilities as u
 from cvxpy.atoms.elementwise.elementwise import Elementwise
+from cvxpy.atoms.affine.reshape import reshape
 from cvxpy.constraints.constraint import Constraint
+from cvxpy.constraints.power import PowCone3D
 from cvxpy.expressions import cvxtypes
+from cvxpy.expressions.constants import Constant
+from cvxpy.expressions.expression import Expression
+from cvxpy.expressions.variable import Variable
 from cvxpy.utilities import bounds as bounds_utils
 from cvxpy.utilities.power_tools import is_power2, pow_high, pow_mid, pow_neg
 
@@ -342,6 +347,132 @@ class Power(Elementwise):
             return self.args[0].is_pwl()
         else:
             return self.args[0].is_constant()
+
+    def conjugate(self, y, perspective_scale=1):
+        """Fenchel conjugate of (s * x^p), for constant p > 1.
+
+        For perspective functions (Roos et al. 2020, Appendix B.9):
+        - (0*x^p)^*(y) = δ_0(y): strict convention, not closure
+        """
+        if not _is_const(self.p) or self.p_used is None or self.p_used <= 1:
+            raise NotImplementedError(
+                "Fenchel conjugate is currently implemented for power(x, p) with p > 1 only."
+            )
+
+        p = self.p_used
+        p_float = float(p)
+        q = p_float / (p_float - 1.0)
+        alpha = 1.0 / q
+        coeff = (p_float - 1.0) / (p_float ** q)  # conjugate coefficient for x^p.
+        one_sided_domain = not is_power2(p)
+
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported for power conjugates."
+            )
+        if not scale.is_scalar() and scale.shape != y.shape:
+            raise ValueError(
+                "Perspective scale for power conjugate must be scalar or match the dual shape."
+            )
+
+        # Strict perspective convention: (0*f)^*(y) = δ_0(y)
+        # When scale is identically zero, enforce y == 0
+        if scale.is_nonneg() and scale.is_nonpos():
+            return self.indicator_conjugate([y == 0])
+
+        constraints = []
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+
+        z = Variable(y.shape, nonneg=True, name="z_power_conj")
+        z_vec = reshape(z, (z.size,), order="F")
+        y_vec = reshape(y, (y.size,), order="F")
+        if scale.is_scalar():
+            scale_vec = reshape(scale * Constant(np.ones(y.shape)), (y.size,), order="F")
+        else:
+            scale_vec = reshape(scale, (scale.size,), order="F")
+
+        if one_sided_domain:
+            u = Variable(y.shape, nonneg=True, name="u_power_conj")
+            constraints.append(u >= y)
+            cone_z = reshape(u, (u.size,), order="F")
+        else:
+            cone_z = y_vec
+
+        constraints.append(PowCone3D(z_vec / coeff, scale_vec, cone_z, alpha=alpha))
+        return z, constraints
+
+    def negative_conjugate(self, y, perspective_scale=1):
+        r"""Fenchel conjugate of :math:`-(x^p)` for constant :math:`0 < p < 1`.
+
+        For :math:`f(x) = x^p` (concave, domain :math:`x \ge 0`),
+
+        .. math::
+
+            (-f)^*(y) = (1-p)\,p^{p/(1-p)}\,(-y)^{-p/(1-p)},
+            \quad y < 0.
+
+        Perspective form with scale :math:`s \ge 0`:
+
+        .. math::
+
+            (s(-f))^*(y) = (1-p)\,p^{p/(1-p)}\,z
+
+        where :math:`z^{1-p}(-y)^p \ge s` (a ``PowCone3D`` constraint).
+        """
+        if not _is_const(self.p) or self.p_used is None:
+            raise NotImplementedError(
+                "Fenchel negative conjugate of power requires "
+                "constant exponent p."
+            )
+        p_float = float(self.p_used)
+        if p_float <= 0 or p_float >= 1:
+            raise NotImplementedError(
+                "Fenchel negative conjugate of power is implemented "
+                "for 0 < p < 1 only."
+            )
+
+        # Closed-form coefficient: (1-p) * p^{p/(1-p)}
+        coeff = (1.0 - p_float) * p_float ** (p_float / (1.0 - p_float))
+
+        scale = perspective_scale
+        if not isinstance(scale, Expression):
+            scale = Constant(np.asarray(scale))
+        if scale.is_complex() and not scale.is_real():
+            raise NotImplementedError(
+                "Complex perspective multipliers are not supported "
+                "for power negative conjugates."
+            )
+        if not scale.is_scalar() and scale.shape != y.shape:
+            raise ValueError(
+                "Perspective scale for power negative conjugate "
+                "must be scalar or match the dual shape."
+            )
+
+        constraints = []
+        if not scale.is_nonneg():
+            constraints.append(scale >= 0)
+
+        z = Variable(y.shape, nonneg=True, name="z_neg_power_conj")
+        z_vec = reshape(z, (z.size,), order="F")
+        neg_y_vec = reshape(-y, (y.size,), order="F")
+        if scale.is_scalar():
+            scale_vec = reshape(
+                scale * Constant(np.ones(y.shape)),
+                (y.size,), order="F",
+            )
+        else:
+            scale_vec = reshape(scale, (scale.size,), order="F")
+
+        # PowCone3D(z, -y, s, 1-p): z^{1-p} * (-y)^p >= s
+        # The cone implicitly enforces z >= 0 and -y >= 0.
+        constraints.append(
+            PowCone3D(z_vec, neg_y_vec, scale_vec, alpha=1.0 - p_float)
+        )
+        return coeff * z, constraints
 
     def _quadratic_power(self) -> bool:
         """Utility function to check if power is 0, 1 or 2."""

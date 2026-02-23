@@ -99,6 +99,10 @@ class Promote(AffAtom):
         """
         return [self.promoted_shape]
 
+    def adjoint(self, y_var):
+        from cvxpy.atoms.affine.sum import sum as cp_sum
+        return [(0, cp_sum(y_var))]
+
     def graph_implementation(
         self, arg_objs, shape: Tuple[int, ...], data=None
     ) -> Tuple[lo.LinOp, List[Constraint]]:

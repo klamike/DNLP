@@ -108,6 +108,22 @@ class AffAtom(Atom):
                 return False
         return True
 
+    def adjoint(self, y_var):
+        """Adjoint map for Fenchel dualization.
+
+        Given a dual vector ``y_var`` with the same shape as ``self``,
+        return a list of ``(arg_index, y_transformed)`` pairs, where
+        ``y_transformed`` is the adjoint applied to ``y_var`` for the
+        argument at ``arg_index``.
+
+        Subclasses should override this method to provide efficient
+        symbolic adjoints. The default raises ``NotImplementedError``.
+        """
+        raise NotImplementedError(
+            f"Symbolic adjoint not implemented for {type(self).__name__}. "
+            f"This affine atom is not yet supported in Fenchel dualization."
+        )
+
     def _grad(self, values) -> List[Any]:
         """Gives the (sub/super)gradient of the atom w.r.t. each argument.
 

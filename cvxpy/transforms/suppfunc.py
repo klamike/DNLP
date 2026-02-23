@@ -65,11 +65,6 @@ def scs_cone_selectors(K):
         arrays, or lists of numpy arrays. The numpy arrays give row indices
         of the affine operator (A, b) returned by SCS's apply function.
     """
-    if K.p3d:
-        msg = "SuppFunc doesn't yet support feasible sets represented \n"
-        msg += "with power cone constraints."
-        raise NotImplementedError(msg)
-        # TODO: implement
     idx = K.zero
     nonneg_idxs = np.arange(idx, idx + K.nonneg)
     idx += K.nonneg
@@ -85,11 +80,25 @@ def scs_cone_selectors(K):
         idx += veclen
     expsize = 3 * K.exp
     exp_idxs = np.arange(idx, idx + expsize)
+    idx += expsize
+    pow3d_idxs = []
+    for _alpha in K.p3d:
+        idxs = np.arange(idx, idx + 3)
+        pow3d_idxs.append(idxs)
+        idx += 3
+    pownd_idxs = []
+    for alpha_vec in K.pnd:
+        cone_size = len(alpha_vec) + 1
+        idxs = np.arange(idx, idx + cone_size)
+        pownd_idxs.append((idxs, np.asarray(alpha_vec)))
+        idx += cone_size
     selectors = {
         'nonneg': nonneg_idxs,
         'exp': exp_idxs,
         'soc': soc_idxs,
-        'psd': psd_idxs
+        'psd': psd_idxs,
+        'pow3d': pow3d_idxs,
+        'pownd': pownd_idxs,
     }
     return selectors
 
@@ -169,6 +178,8 @@ class SuppFunc:
         self._A = None
         self._b = None
         self._K_sels = None
+        self._K_pow3d_alphas = None
+        self._K_pownd_alphas = None
         self._compute_conic_repr_of_set()
 
     def __call__(self, y) -> SuppFuncAtom:
@@ -193,6 +204,8 @@ class SuppFunc:
         self._A = A
         self._b = b
         self._K_sels = K_sels
+        self._K_pow3d_alphas = [float(alpha) for alpha in K.p3d]
+        self._K_pownd_alphas = [np.asarray(alpha_vec, dtype=float) for alpha_vec in K.pnd]
 
     def conic_repr_of_set(self):
         return self._A, self._b, self._K_sels
